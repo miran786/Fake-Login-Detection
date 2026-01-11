@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useAuth } from '../context/AuthContext';
 import {
   Shield,
   Activity,
@@ -24,7 +25,7 @@ interface DashboardProps {
   onLogout: () => void;
 }
 
-import { useAuth } from '../context/AuthContext';
+
 
 
 
