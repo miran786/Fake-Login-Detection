@@ -27,6 +27,46 @@ export interface LoginAttempt {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// Helper to parse User Agent
+const parseUserAgent = (ua: string) => {
+    let browser = "Unknown Browser";
+    if (ua.indexOf("Firefox") > -1) browser = "Firefox";
+    else if (ua.indexOf("SamsungBrowser") > -1) browser = "Samsung Internet";
+    else if (ua.indexOf("Opera") > -1 || ua.indexOf("OPR") > -1) browser = "Opera";
+    else if (ua.indexOf("Trident") > -1) browser = "Internet Explorer";
+    else if (ua.indexOf("Edge") > -1) browser = "Edge";
+    else if (ua.indexOf("Chrome") > -1) browser = "Chrome";
+    else if (ua.indexOf("Safari") > -1) browser = "Safari";
+
+    let os = "Unknown OS";
+    if (ua.indexOf("Win") > -1) os = "Windows";
+    else if (ua.indexOf("Mac") > -1) os = "MacOS";
+    else if (ua.indexOf("Linux") > -1) os = "Linux";
+    else if (ua.indexOf("Android") > -1) os = "Android";
+    else if (ua.indexOf("like Mac") > -1) os = "iOS";
+
+    return `${browser} on ${os}`;
+};
+
+// Helper to fetch IP and Location
+const fetchIpLocation = async () => {
+    try {
+        const response = await fetch('https://ipapi.co/json/');
+        if (!response.ok) throw new Error('Failed to fetch IP data');
+        const data = await response.json();
+        return {
+            ip: data.ip || 'Unknown IP',
+            location: `${data.city}, ${data.country_name}` || 'Unknown Location'
+        };
+    } catch (error) {
+        console.error("Error fetching IP location:", error);
+        return {
+            ip: '127.0.0.1', // Fallback
+            location: 'Unknown Location'
+        };
+    }
+};
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [user, setUser] = useState<User | null>(null);
     const [loginHistory, setLoginHistory] = useState<LoginAttempt[]>([]);
@@ -51,11 +91,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const storedUsers = JSON.parse(localStorage.getItem('registeredUsers') || '[]');
         const foundUser = storedUsers.find((u: any) => u.email === email && u.password === password);
 
+        // Fetch real data
+        const { ip, location } = await fetchIpLocation();
+        const device = parseUserAgent(navigator.userAgent);
+
         // Gather risk factors
         const currentFactors: RiskFactors = {
-            location: 'New York, USA', // Mocked for now, implies same location usually
-            ip: (Math.random() > 0.5 ? '192.168.1.100' : '203.0.113.' + Math.floor(Math.random() * 255)), // Randomize IP slightly
-            device: navigator.userAgent,
+            location: location,
+            ip: ip,
+            device: device,
             timestamp: new Date().toISOString(),
             email: email
         };

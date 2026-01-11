@@ -144,7 +144,7 @@ export function Dashboard({ userEmail, onLogout }: DashboardProps) {
                   <span className="text-sm font-medium">Location Analysis</span>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Geolocation tracking to detect unusual login locations
+                  {latestLogin ? `Detected: ${latestLogin.location}` : 'Geolocation tracking enabled'}
                 </p>
               </div>
               <div className="p-4 rounded-lg bg-background/50 border border-border">
@@ -153,7 +153,7 @@ export function Dashboard({ userEmail, onLogout }: DashboardProps) {
                   <span className="text-sm font-medium">Device Fingerprinting</span>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Analyzing device information and browser characteristics
+                  {latestLogin ? `Current: ${latestLogin.device}` : 'Device analysis enabled'}
                 </p>
               </div>
               <div className="p-4 rounded-lg bg-background/50 border border-border">
@@ -162,7 +162,7 @@ export function Dashboard({ userEmail, onLogout }: DashboardProps) {
                   <span className="text-sm font-medium">IP Reputation</span>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Checking IP address against threat intelligence databases
+                  {latestLogin ? `IP: ${latestLogin.ip}` : 'IP monitoring enabled'}
                 </p>
               </div>
             </div>
