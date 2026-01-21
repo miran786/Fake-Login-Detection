@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Globe, Smartphone, MapPin, Monitor, Chrome } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
+import { useLocationData } from '../hooks/useLocationData';
 
 interface SecurityInfoProps {
   className?: string;
@@ -25,7 +26,7 @@ interface LocationInfo {
 
 export function SecurityInfo({ className }: SecurityInfoProps) {
   const [deviceInfo, setDeviceInfo] = useState<DeviceInfo | null>(null);
-  const [locationInfo, setLocationInfo] = useState<LocationInfo | null>(null);
+  const { locationInfo } = useLocationData();
 
   useEffect(() => {
     // Get device information
@@ -74,14 +75,6 @@ export function SecurityInfo({ className }: SecurityInfoProps) {
       language: navigator.language,
     });
 
-    // Mock location info (in production, this would come from a geolocation API)
-    setLocationInfo({
-      ip: '192.168.1.100',
-      city: 'New York',
-      region: 'New York',
-      country: 'United States',
-      isp: 'Example ISP Inc.',
-    });
   }, []);
 
   if (!deviceInfo || !locationInfo) {

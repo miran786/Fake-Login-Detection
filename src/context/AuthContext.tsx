@@ -11,6 +11,8 @@ type AuthContextType = {
     login: (email: string, password: string) => Promise<{ success: boolean; message?: string; riskScore?: number }>;
     signup: (name: string, email: string, password: string) => Promise<boolean>;
     logout: () => void;
+    checkUserExists: (email: string) => boolean;
+    forceLogin: (email: string) => Promise<void>;
     loginHistory: LoginAttempt[];
 };
 
@@ -182,8 +184,43 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         localStorage.removeItem('currentUser');
     };
 
+    const checkUserExists = (email: string) => {
+        const storedUsers = JSON.parse(localStorage.getItem('registeredUsers') || '[]');
+        return storedUsers.some((u: any) => u.email === email);
+    };
+
+    const forceLogin = async (email: string) => {
+        const storedUsers = JSON.parse(localStorage.getItem('registeredUsers') || '[]');
+        const foundUser = storedUsers.find((u: any) => u.email === email);
+
+        if (!foundUser) return;
+
+        // Fetch real data for history
+        const { ip, location } = await fetchIpLocation();
+        const device = parseUserAgent(navigator.userAgent);
+
+        const newAttempt: LoginAttempt = {
+            id: Date.now().toString(),
+            location,
+            ip,
+            device,
+            timestamp: new Date().toISOString(),
+            riskScore: 0, // Reset usually low risk
+            status: 'success',
+            email: email
+        };
+
+        const updatedHistory = [newAttempt, ...loginHistory];
+        setLoginHistory(updatedHistory);
+        localStorage.setItem('loginHistory', JSON.stringify(updatedHistory));
+
+        const userData = { email: foundUser.email, name: foundUser.name };
+        setUser(userData);
+        localStorage.setItem('currentUser', JSON.stringify(userData));
+    };
+
     return (
-        <AuthContext.Provider value={{ user, login, signup, logout, loginHistory }}>
+        <AuthContext.Provider value={{ user, login, signup, logout, checkUserExists, forceLogin, loginHistory }}>
             {children}
         </AuthContext.Provider>
     );

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useLocationData } from '../hooks/useLocationData';
 import {
   Shield,
   Activity,
@@ -31,6 +32,7 @@ interface DashboardProps {
 
 export function Dashboard({ userEmail, onLogout }: DashboardProps) {
   const { loginHistory } = useAuth();
+  const { locationInfo } = useLocationData();
   const [currentRiskScore, setCurrentRiskScore] = useState(0);
 
   // Filter history for current user
@@ -78,6 +80,48 @@ export function Dashboard({ userEmail, onLogout }: DashboardProps) {
     if (diffMins < 60) return `${diffMins} minutes ago`;
     if (diffHours < 24) return `${diffHours} hours ago`;
     return `${diffDays} days ago`;
+  };
+
+  const calculateTrend = (status: 'success' | 'flagged' | 'blocked') => {
+    const now = new Date();
+    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const fourteenDaysAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+
+    const currentPeriodCount = userHistory.filter(h =>
+      h.status === status &&
+      new Date(h.timestamp) >= sevenDaysAgo
+    ).length;
+
+    const prevPeriodCount = userHistory.filter(h =>
+      h.status === status &&
+      new Date(h.timestamp) >= fourteenDaysAgo &&
+      new Date(h.timestamp) < sevenDaysAgo
+    ).length;
+
+    if (prevPeriodCount === 0) return { value: 0, direction: 'neutral' as const };
+
+    const change = ((currentPeriodCount - prevPeriodCount) / prevPeriodCount) * 100;
+    return {
+      value: Math.abs(Math.round(change)),
+      direction: change > 0 ? 'up' as const : (change < 0 ? 'down' as const : 'neutral' as const)
+    };
+  };
+
+  const successTrend = calculateTrend('success');
+  const flaggedTrend = calculateTrend('flagged');
+  const blockedTrend = calculateTrend('blocked');
+
+  // Helper to get location string
+  const getLocationDisplay = () => {
+    if (latestLogin) return latestLogin.location;
+    if (locationInfo && locationInfo.city !== 'Unknown') return `${locationInfo.city}, ${locationInfo.region}`;
+    return 'Locating...';
+  };
+
+  const getIpDisplay = () => {
+    if (latestLogin) return latestLogin.ip;
+    if (locationInfo && locationInfo.ip !== 'Unknown') return locationInfo.ip;
+    return 'Analyzing...';
   };
 
   return (
@@ -145,7 +189,7 @@ export function Dashboard({ userEmail, onLogout }: DashboardProps) {
                   <span className="text-sm font-medium">Location Analysis</span>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  {latestLogin ? `Detected: ${latestLogin.location}` : 'Geolocation tracking enabled'}
+                  Detected: {getLocationDisplay()}
                 </p>
               </div>
               <div className="p-4 rounded-lg bg-background/50 border border-border">
@@ -154,7 +198,7 @@ export function Dashboard({ userEmail, onLogout }: DashboardProps) {
                   <span className="text-sm font-medium">Device Fingerprinting</span>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  {latestLogin ? `Current: ${latestLogin.device}` : 'Device analysis enabled'}
+                  Current: {latestLogin ? latestLogin.device : navigator.userAgent.includes('Win') ? 'Windows Device' : 'Unknown Device'}
                 </p>
               </div>
               <div className="p-4 rounded-lg bg-background/50 border border-border">
@@ -163,7 +207,7 @@ export function Dashboard({ userEmail, onLogout }: DashboardProps) {
                   <span className="text-sm font-medium">IP Reputation</span>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  {latestLogin ? `IP: ${latestLogin.ip}` : 'IP monitoring enabled'}
+                  IP: {getIpDisplay()}
                 </p>
               </div>
             </div>
@@ -196,17 +240,17 @@ export function Dashboard({ userEmail, onLogout }: DashboardProps) {
             <CardContent>
               <div className="flex items-end justify-between">
                 <div>
-                  <p className="text-3xl font-bold">
-                    <p className="text-3xl font-bold">
-                      {userHistory.filter(a => a.status === 'success').length}
-                    </p>
-                  </p>
+                  <div className="text-3xl font-bold">
+                    {userHistory.filter(a => a.status === 'success').length}
+                  </div>
                   <p className="text-xs text-muted-foreground mt-1">Last 7 days</p>
                 </div>
-                <div className="flex items-center gap-1 text-success text-sm">
-                  <TrendingDown className="w-4 h-4" />
-                  <span>12%</span>
-                </div>
+                {successTrend.value > 0 && (
+                  <div className={`flex items-center gap-1 text-sm ${successTrend.direction === 'up' ? 'text-success' : 'text-muted-foreground'}`}>
+                    {successTrend.direction === 'up' ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
+                    <span>{successTrend.value}%</span>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -221,17 +265,17 @@ export function Dashboard({ userEmail, onLogout }: DashboardProps) {
             <CardContent>
               <div className="flex items-end justify-between">
                 <div>
-                  <p className="text-3xl font-bold">
-                    <p className="text-3xl font-bold">
-                      {userHistory.filter(a => a.status === 'flagged').length}
-                    </p>
-                  </p>
+                  <div className="text-3xl font-bold">
+                    {userHistory.filter(a => a.status === 'flagged').length}
+                  </div>
                   <p className="text-xs text-muted-foreground mt-1">Last 7 days</p>
                 </div>
-                <div className="flex items-center gap-1 text-warning text-sm">
-                  <TrendingUp className="w-4 h-4" />
-                  <span>8%</span>
-                </div>
+                {flaggedTrend.value > 0 && (
+                  <div className={`flex items-center gap-1 text-sm ${flaggedTrend.direction === 'up' ? 'text-destructive' : 'text-success'}`}>
+                    {flaggedTrend.direction === 'up' ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
+                    <span>{flaggedTrend.value}%</span>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -246,17 +290,17 @@ export function Dashboard({ userEmail, onLogout }: DashboardProps) {
             <CardContent>
               <div className="flex items-end justify-between">
                 <div>
-                  <p className="text-3xl font-bold">
-                    <p className="text-3xl font-bold">
-                      {userHistory.filter(a => a.status === 'blocked').length}
-                    </p>
-                  </p>
+                  <div className="text-3xl font-bold">
+                    {userHistory.filter(a => a.status === 'blocked').length}
+                  </div>
                   <p className="text-xs text-muted-foreground mt-1">Last 7 days</p>
                 </div>
-                <div className="flex items-center gap-1 text-success text-sm">
-                  <TrendingDown className="w-4 h-4" />
-                  <span>5%</span>
-                </div>
+                {blockedTrend.value > 0 && (
+                  <div className={`flex items-center gap-1 text-sm ${blockedTrend.direction === 'up' ? 'text-destructive' : 'text-success'}`}>
+                    {blockedTrend.direction === 'up' ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
+                    <span>{blockedTrend.value}%</span>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
