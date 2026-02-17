@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { calculateRiskScore, RiskFactors } from '../utils/risk-engine';
+import { sendSuspiciousLoginAlert } from '../utils/email-service';
 
 type User = {
     name?: string;
@@ -8,7 +9,7 @@ type User = {
 
 type AuthContextType = {
     user: User | null;
-    login: (email: string, password: string) => Promise<{ success: boolean; message?: string; riskScore?: number }>;
+    login: (email: string, password: string) => Promise<{ success: boolean; message?: string; riskScore?: number; alertSent?: boolean }>;
     signup: (name: string, email: string, password: string) => Promise<boolean>;
     logout: () => void;
     checkUserExists: (email: string) => boolean;
@@ -72,6 +73,7 @@ const fetchIpLocation = async () => {
 export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [user, setUser] = useState<User | null>(null);
     const [loginHistory, setLoginHistory] = useState<LoginAttempt[]>([]);
+    const [failedAttempts, setFailedAttempts] = useState<Record<string, number>>({});
 
     useEffect(() => {
         // Check for persisted session
@@ -83,6 +85,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const history = localStorage.getItem('loginHistory');
         if (history) {
             setLoginHistory(JSON.parse(history));
+        }
+        // Load failed attempts
+        const storedFailed = localStorage.getItem('failedLoginAttempts');
+        if (storedFailed) {
+            setFailedAttempts(JSON.parse(storedFailed));
         }
     }, []);
 
@@ -150,12 +157,45 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 return { success: false, message: 'Login blocked due to high risk activity.', riskScore: riskResult.score };
             }
 
+            // Successful login — reset failed attempts counter
+            const resetAttempts = { ...failedAttempts };
+            delete resetAttempts[email];
+            setFailedAttempts(resetAttempts);
+            localStorage.setItem('failedLoginAttempts', JSON.stringify(resetAttempts));
+
             const userData = { email: foundUser.email, name: foundUser.name };
             setUser(userData);
             localStorage.setItem('currentUser', JSON.stringify(userData));
             return { success: true, riskScore: riskResult.score };
         } else {
-            return { success: false, message: 'Invalid credentials. Please sign up or check your password.' };
+            // Failed login — track consecutive failures
+            const currentCount = (failedAttempts[email] || 0) + 1;
+            const updatedAttempts = { ...failedAttempts, [email]: currentCount };
+            let alertSent = false;
+
+            if (currentCount >= 3) {
+                // Send suspicious login alert email
+                const { ip, location } = await fetchIpLocation();
+                const device = parseUserAgent(navigator.userAgent);
+                await sendSuspiciousLoginAlert(email, {
+                    ip,
+                    device,
+                    location,
+                    timestamp: new Date().toISOString(),
+                });
+                alertSent = true;
+                // Reset counter after alert
+                updatedAttempts[email] = 0;
+            }
+
+            setFailedAttempts(updatedAttempts);
+            localStorage.setItem('failedLoginAttempts', JSON.stringify(updatedAttempts));
+
+            return {
+                success: false,
+                message: 'Invalid credentials. Please sign up or check your password.',
+                alertSent,
+            };
         }
     };
 

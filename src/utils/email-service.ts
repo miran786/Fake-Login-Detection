@@ -1,8 +1,8 @@
 import emailjs from '@emailjs/browser';
 
-const SERVICE_ID = process.env.REACT_APP_EMAILJS_SERVICE_ID || 'service_du1h5i1';
-const TEMPLATE_ID = process.env.REACT_APP_EMAILJS_TEMPLATE_ID || 'template_wg2bduq';
-const PUBLIC_KEY = process.env.REACT_APP_EMAILJS_PUBLIC_KEY || '5KrNj6cWERlaQuo5Z';
+const SERVICE_ID = process.env.REACT_APP_EMAILJS_SERVICE_ID || 'service_g0wl52i';
+const TEMPLATE_ID = process.env.REACT_APP_EMAILJS_TEMPLATE_ID || 'template_p4qx7ob';
+const PUBLIC_KEY = process.env.REACT_APP_EMAILJS_PUBLIC_KEY || 'StcPXy5XtG7ae3SbZ';
 
 interface OTPTemplateParams extends Record<string, unknown> {
   to_email: string; // The recipient's email
@@ -47,6 +47,56 @@ export const sendOTP = async (email: string, otp: string): Promise<boolean> => {
     console.log(`🔑 OTP: ${otp}`);
     console.log('==========================================');
     // Return true so the flow continues even if EmailJS is blocked by AdBlocker/Firewall
+    return true;
+  }
+};
+
+interface SuspiciousLoginMetadata {
+  ip: string;
+  device: string;
+  location: string;
+  timestamp: string;
+}
+
+// Dedicated template for suspicious login alerts
+const ALERT_TEMPLATE_ID = 'template_avr2cqo';
+
+export const sendSuspiciousLoginAlert = async (
+  email: string,
+  metadata: SuspiciousLoginMetadata
+): Promise<boolean> => {
+  const templateParams = {
+    to_email: email,
+    email: email,
+    ip: metadata.ip,
+    device: metadata.device,
+    location: metadata.location,
+    time: new Date(metadata.timestamp).toLocaleString(),
+  };
+
+  console.log('Sending suspicious login alert:', templateParams);
+
+  try {
+    const response = await emailjs.send(
+      SERVICE_ID,
+      ALERT_TEMPLATE_ID,
+      templateParams,
+      PUBLIC_KEY
+    );
+
+    console.log('Suspicious login alert sent!', response.status, response.text);
+    return true;
+  } catch (error) {
+    console.error('Failed to send suspicious login alert:', error);
+    console.warn('⚠️ Network Error. Falling back to MOCK MODE.');
+    console.log('==========================================');
+    console.log(`🚨 MOCK SUSPICIOUS LOGIN ALERT`);
+    console.log(`📧 To: ${email}`);
+    console.log(`📍 IP: ${metadata.ip}`);
+    console.log(`💻 Device: ${metadata.device}`);
+    console.log(`📌 Location: ${metadata.location}`);
+    console.log(`🕐 Time: ${new Date(metadata.timestamp).toLocaleString()}`);
+    console.log('==========================================');
     return true;
   }
 };

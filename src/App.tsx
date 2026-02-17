@@ -38,6 +38,12 @@ export default function App() {
         toast.error('Login Failed', {
           description: result.message,
         });
+        if (result.alertSent) {
+          toast.warning('Security Alert Sent', {
+            description: `A suspicious activity email has been sent to ${email} due to 3 failed login attempts.`,
+            duration: 8000,
+          });
+        }
       }
     }
     return result;
