@@ -36,7 +36,8 @@ export function LoginPage({ onLogin, onSwitchToSignup }: LoginPageProps) {
       return;
     }
 
-    if (!checkUserExists(resetEmail)) {
+    const userExists = await checkUserExists(resetEmail);
+    if (!userExists) {
       toast.error('Email not found. Please sign up first.');
       return;
     }

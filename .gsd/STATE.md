@@ -9,3 +9,7 @@ Codebase mapping complete.
 ## Current Position
 - **Phase**: Codebase mapped, ready for /new-project
 - **Status**: Architecture and stack documented
+
+## Recent Fixes
+- Fixed wallet UI issue in SendMoney where amount buttons (50, 100, etc.) had invisible text against a white background by enforcing a transparent background.
+- Updated README.md to reflect the recent architectural changes to a full-stack containerized application (Node.js/Express, PostgreSQL, Docker).

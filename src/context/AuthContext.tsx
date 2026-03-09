@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { calculateRiskScore, RiskFactors } from '../utils/risk-engine';
 import { sendSuspiciousLoginAlert } from '../utils/email-service';
+
+const API_BASE = process.env.REACT_APP_API_URL || '/api';
 
 type User = {
     name?: string;
@@ -12,9 +13,10 @@ type AuthContextType = {
     login: (email: string, password: string) => Promise<{ success: boolean; message?: string; riskScore?: number; alertSent?: boolean }>;
     signup: (name: string, email: string, password: string) => Promise<boolean>;
     logout: () => void;
-    checkUserExists: (email: string) => boolean;
+    checkUserExists: (email: string) => Promise<boolean>;
     forceLogin: (email: string) => Promise<void>;
     loginHistory: LoginAttempt[];
+    fetchHistory: (email: string) => Promise<void>;
 };
 
 export interface LoginAttempt {
@@ -30,7 +32,6 @@ export interface LoginAttempt {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Helper to parse User Agent
 const parseUserAgent = (ua: string) => {
     let browser = "Unknown Browser";
     if (ua.indexOf("Firefox") > -1) browser = "Firefox";
@@ -51,7 +52,6 @@ const parseUserAgent = (ua: string) => {
     return `${browser} on ${os}`;
 };
 
-// Helper to fetch IP and Location
 const fetchIpLocation = async () => {
     try {
         const response = await fetch('https://ipapi.co/json/');
@@ -63,204 +63,131 @@ const fetchIpLocation = async () => {
         };
     } catch (error) {
         console.error("Error fetching IP location:", error);
-        return {
-            ip: '127.0.0.1', // Fallback
-            location: 'Unknown Location'
-        };
+        return { ip: '127.0.0.1', location: 'Unknown Location' };
     }
 };
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [user, setUser] = useState<User | null>(null);
     const [loginHistory, setLoginHistory] = useState<LoginAttempt[]>([]);
-    const [failedAttempts, setFailedAttempts] = useState<Record<string, number>>({});
 
     useEffect(() => {
-        // Check for persisted session
         const storedUser = localStorage.getItem('currentUser');
         if (storedUser) {
-            setUser(JSON.parse(storedUser));
-        }
-        // Load history
-        const history = localStorage.getItem('loginHistory');
-        if (history) {
-            setLoginHistory(JSON.parse(history));
-        }
-        // Load failed attempts
-        const storedFailed = localStorage.getItem('failedLoginAttempts');
-        if (storedFailed) {
-            setFailedAttempts(JSON.parse(storedFailed));
+            const parsed = JSON.parse(storedUser);
+            setUser(parsed);
+            fetchHistory(parsed.email);
         }
     }, []);
 
+    const fetchHistory = async (email: string) => {
+        try {
+            const res = await fetch(`${API_BASE}/user/history?email=${encodeURIComponent(email)}`);
+            if (res.ok) {
+                const data = await res.json();
+                setLoginHistory(data);
+            }
+        } catch (e) {
+            console.error(e);
+        }
+    };
+
     const login = async (email: string, password: string) => {
-        // Simulate API delay
-        await new Promise((resolve) => setTimeout(resolve, 800));
-
-        const storedUsers = JSON.parse(localStorage.getItem('registeredUsers') || '[]');
-        const foundUser = storedUsers.find((u: any) => u.email === email && u.password === password);
-
-        // Fetch real data
         const { ip, location } = await fetchIpLocation();
         const device = parseUserAgent(navigator.userAgent);
 
-        // Gather risk factors
-        const currentFactors: RiskFactors = {
-            location: location,
-            ip: ip,
-            device: device,
-            timestamp: new Date().toISOString(),
-            email: email
-        };
+        try {
+            const res = await fetch(`${API_BASE}/auth/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, password, ip, location, device })
+            });
 
-        // Calculate risk
-        // We need to map LoginAttempt back to RiskFactors for history comparison
-        const riskHistory: RiskFactors[] = loginHistory.map(h => ({
-            location: h.location,
-            ip: h.ip,
-            device: h.device,
-            timestamp: h.timestamp,
-            email: h.email
-        }));
+            const data = await res.json();
 
-        const riskResult = calculateRiskScore(currentFactors, riskHistory);
-        let status: 'success' | 'blocked' | 'flagged' = 'success';
-
-        if (foundUser) {
-            if (riskResult.level === 'high') {
-                status = 'blocked';
-            } else if (riskResult.level === 'medium') {
-                status = 'flagged';
+            if (data.success) {
+                setUser(data.user);
+                localStorage.setItem('currentUser', JSON.stringify(data.user));
+                await fetchHistory(email);
+                return { success: true, riskScore: data.riskScore };
+            } else {
+                if (data.alertSent) {
+                    await sendSuspiciousLoginAlert(email, {
+                        ip,
+                        device,
+                        location,
+                        timestamp: new Date().toISOString()
+                    });
+                }
+                return { success: false, message: data.message, riskScore: data.riskScore, alertSent: data.alertSent };
             }
-        } else {
-            // Even if user not found, we record the attempt? 
-            // For simplify, only record successful auth attempts or attempts on existing users.
-            // But if user not found, we can't really attach it to a profile easily without a more complex backend.
-            // We'll proceed with auth check first.
-        }
-
-        // Refined logic: Check credentials FIRST.
-        if (foundUser) {
-            const newAttempt: LoginAttempt = {
-                id: Date.now().toString(),
-                ...currentFactors,
-                riskScore: riskResult.score,
-                status: status === 'blocked' ? 'blocked' : (status === 'flagged' ? 'flagged' : 'success'),
-                email: email
-            };
-
-            const updatedHistory = [newAttempt, ...loginHistory];
-            setLoginHistory(updatedHistory);
-            localStorage.setItem('loginHistory', JSON.stringify(updatedHistory));
-
-            if (status === 'blocked') {
-                return { success: false, message: 'Login blocked due to high risk activity.', riskScore: riskResult.score };
-            }
-
-            // Successful login — reset failed attempts counter
-            const resetAttempts = { ...failedAttempts };
-            delete resetAttempts[email];
-            setFailedAttempts(resetAttempts);
-            localStorage.setItem('failedLoginAttempts', JSON.stringify(resetAttempts));
-
-            const userData = { email: foundUser.email, name: foundUser.name };
-            setUser(userData);
-            localStorage.setItem('currentUser', JSON.stringify(userData));
-            return { success: true, riskScore: riskResult.score };
-        } else {
-            // Failed login — track consecutive failures
-            const currentCount = (failedAttempts[email] || 0) + 1;
-            const updatedAttempts = { ...failedAttempts, [email]: currentCount };
-            let alertSent = false;
-
-            if (currentCount >= 3) {
-                // Send suspicious login alert email
-                const { ip, location } = await fetchIpLocation();
-                const device = parseUserAgent(navigator.userAgent);
-                await sendSuspiciousLoginAlert(email, {
-                    ip,
-                    device,
-                    location,
-                    timestamp: new Date().toISOString(),
-                });
-                alertSent = true;
-                // Reset counter after alert
-                updatedAttempts[email] = 0;
-            }
-
-            setFailedAttempts(updatedAttempts);
-            localStorage.setItem('failedLoginAttempts', JSON.stringify(updatedAttempts));
-
-            return {
-                success: false,
-                message: 'Invalid credentials. Please sign up or check your password.',
-                alertSent,
-            };
+        } catch (e) {
+            console.error(e);
+            return { success: false, message: 'Server error' };
         }
     };
 
     const signup = async (name: string, email: string, password: string) => {
-        await new Promise((resolve) => setTimeout(resolve, 800));
-
-        const storedUsers = JSON.parse(localStorage.getItem('registeredUsers') || '[]');
-
-        if (storedUsers.some((u: any) => u.email === email)) {
-            return false; // User exists
+        try {
+            const res = await fetch(`${API_BASE}/auth/signup`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, email, password })
+            });
+            const data = await res.json();
+            if (data.success) {
+                setUser(data.user);
+                localStorage.setItem('currentUser', JSON.stringify(data.user));
+                return true;
+            }
+            return false;
+        } catch (e) {
+            console.error(e);
+            return false;
         }
-
-        const newUser = { name, email, password };
-        storedUsers.push(newUser);
-        localStorage.setItem('registeredUsers', JSON.stringify(storedUsers));
-
-        // Auto login
-        const userData = { email, name };
-        setUser(userData);
-        localStorage.setItem('currentUser', JSON.stringify(userData));
-        return true;
     };
 
     const logout = () => {
         setUser(null);
+        setLoginHistory([]);
         localStorage.removeItem('currentUser');
     };
 
-    const checkUserExists = (email: string) => {
-        const storedUsers = JSON.parse(localStorage.getItem('registeredUsers') || '[]');
-        return storedUsers.some((u: any) => u.email === email);
+    const checkUserExists = async (email: string): Promise<boolean> => {
+        try {
+            const res = await fetch(`${API_BASE}/auth/check-user?email=${encodeURIComponent(email)}`);
+            const data = await res.json();
+            return !!data.exists;
+        } catch (e) {
+            console.error(e);
+            return false;
+        }
     };
 
     const forceLogin = async (email: string) => {
-        const storedUsers = JSON.parse(localStorage.getItem('registeredUsers') || '[]');
-        const foundUser = storedUsers.find((u: any) => u.email === email);
-
-        if (!foundUser) return;
-
-        // Fetch real data for history
         const { ip, location } = await fetchIpLocation();
         const device = parseUserAgent(navigator.userAgent);
 
-        const newAttempt: LoginAttempt = {
-            id: Date.now().toString(),
-            location,
-            ip,
-            device,
-            timestamp: new Date().toISOString(),
-            riskScore: 0, // Reset usually low risk
-            status: 'success',
-            email: email
-        };
+        try {
+            const res = await fetch(`${API_BASE}/auth/force-login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, ip, location, device })
+            });
 
-        const updatedHistory = [newAttempt, ...loginHistory];
-        setLoginHistory(updatedHistory);
-        localStorage.setItem('loginHistory', JSON.stringify(updatedHistory));
-
-        const userData = { email: foundUser.email, name: foundUser.name };
-        setUser(userData);
-        localStorage.setItem('currentUser', JSON.stringify(userData));
+            const data = await res.json();
+            if (data.success) {
+                setUser(data.user);
+                localStorage.setItem('currentUser', JSON.stringify(data.user));
+                await fetchHistory(email);
+            }
+        } catch (e) {
+            console.error(e);
+        }
     };
 
     return (
-        <AuthContext.Provider value={{ user, login, signup, logout, checkUserExists, forceLogin, loginHistory }}>
+        <AuthContext.Provider value={{ user, login, signup, logout, checkUserExists, forceLogin, loginHistory, fetchHistory }}>
             {children}
         </AuthContext.Provider>
     );

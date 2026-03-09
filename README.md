@@ -1,6 +1,6 @@
 # 🛡️ Fake Login Detection System
 
-> An ML-powered authentication security platform that detects suspicious login activity, performs real-time risk assessment, and sends email alerts — built with **React**, **TypeScript**, **Tailwind CSS v4**, and **Shadcn UI**.
+> An ML-powered authentication security platform that detects suspicious login activity, performs real-time risk assessment, and sends email alerts — built with **React**, **TypeScript**, **Express**, **Prisma**, **PostgreSQL**, and **Docker**.
 
 ---
 
@@ -8,13 +8,15 @@
 
 | Feature | Description |
 |---------|-------------|
-| 🔐 **Secure Authentication** | Sign up, sign in, and session persistence via localStorage |
+| 🔐 **Secure Authentication** | Sign up, sign in, and secure session management via backend API |
+| 🗄️ **Robust Backend** | Node.js / Express backend with a PostgreSQL database managed via Prisma ORM |
 | 🤖 **ML Risk Engine** | Real-time risk scoring based on device, IP, location, and time anomalies |
 | 🚨 **Suspicious Login Alerts** | Automatic email alert after 3 consecutive failed login attempts |
 | 📧 **OTP Verification** | Forgot password flow with real email-based OTP via EmailJS |
 | 📊 **Security Dashboard** | Live metrics, login history, trend analysis, and session details |
 | 🌍 **Geo-Location Tracking** | Real-time IP, city, country, and ISP detection via ipapi.co |
 | 📱 **Device Fingerprinting** | Browser, OS, device type, screen resolution, and timezone detection |
+| 🐳 **Dockerized Deployment** | Easy one-command setup using Docker and Docker Compose |
 
 ---
 
@@ -30,13 +32,18 @@ graph TB
         LD["Location Data Hook<br/>(ipapi.co)"]
     end
 
+    subgraph Backend["⚙️ Backend Services"]
+        API["Express API Server"]
+        ORM["Prisma ORM"]
+    end
+
     subgraph External["☁️ External Services"]
         EJS["EmailJS API"]
         IPAPI["ipapi.co API"]
     end
 
-    subgraph Storage["💾 Browser Storage"]
-        LS["localStorage<br/>- registeredUsers<br/>- currentUser<br/>- loginHistory<br/>- failedLoginAttempts"]
+    subgraph Storage["🐘 Database"]
+        DB["PostgreSQL Database<br/>- Users<br/>- Login History<br/>- Failed Attempts"]
     end
 
     UI --> AC
@@ -46,9 +53,12 @@ graph TB
     UI --> LD
     ES --> EJS
     LD --> IPAPI
-    AC --> LS
+    AC <--> API
+    API <--> ORM
+    ORM <--> DB
 
     style Client fill:#1a1a2e,stroke:#e94560,color:#fff
+    style Backend fill:#16213e,stroke:#0f3460,color:#fff
     style External fill:#16213e,stroke:#0f3460,color:#fff
     style Storage fill:#0f3460,stroke:#533483,color:#fff
 ```
@@ -89,7 +99,7 @@ flowchart TD
     
     G --> U[Validate Password Strength]
     U --> V{Meets Requirements?}
-    V -->|Yes| W[Store User in localStorage]
+    V -->|Yes| W[Store User in Database]
     W --> C
     V -->|No| X[Show Validation Errors]
     
@@ -162,13 +172,13 @@ graph LR
     S -->|Auth Result / Dashboard| U
     S <-->|OTP & Alert Emails| EJS(("📧 EmailJS"))
     S <-->|IP & Location Data| API(("🌍 ipapi.co"))
-    S <-->|Read/Write User Data| LS(("💾 localStorage"))
+    S <-->|Read/Write User Data| DB(("🐘 PostgreSQL"))
 
     style S fill:#1a1a2e,stroke:#e94560,color:#fff
     style U fill:#0f3460,stroke:#533483,color:#fff
     style EJS fill:#16213e,stroke:#0f3460,color:#fff
     style API fill:#16213e,stroke:#0f3460,color:#fff
-    style LS fill:#16213e,stroke:#0f3460,color:#fff
+    style DB fill:#16213e,stroke:#0f3460,color:#fff
 ```
 
 ### DFD Level 1 — Major Processes
@@ -192,10 +202,10 @@ graph TB
     P6 <-->|API Call| EJS(("📧 EmailJS"))
     P4 <-->|IP/Location| API(("🌍 ipapi.co"))
 
-    P1 <-->|Read/Write| DS1[("D1: Users")]
+    P1 <-->|Read/Write| DS1[("D1: Users DB")]
     P2 -->|Store| DS1
-    P1 <-->|Read/Write| DS2[("D2: Login History")]
-    P5 <-->|Read/Write| DS3[("D3: Failed Attempts")]
+    P1 <-->|Read/Write| DS2[("D2: Login History DB")]
+    P5 <-->|Read/Write| DS3[("D3: Failed Attempts DB")]
 
     P1 -->|Session Data| U
     P1 -->|Dashboard Data| P7["7.0<br/>Dashboard &<br/>Analytics"]
@@ -216,20 +226,20 @@ graph TB
 graph TB
     U(("👤 User")) -->|Email, Password| P1_1["1.1<br/>Validate<br/>Credentials"]
 
-    P1_1 <-->|Lookup| DS1[("D1: Users")]
+    P1_1 <-->|Lookup| DS1[("D1: Users DB")]
     P1_1 -->|Valid User + Factors| P1_2["1.2<br/>Fetch Location<br/>& Device Info"]
 
     P1_2 <-->|API Request| API(("🌍 ipapi.co"))
     P1_2 -->|Risk Factors| P1_3["1.3<br/>Calculate<br/>Risk Score"]
 
-    P1_3 <-->|History Comparison| DS2[("D2: Login History")]
+    P1_3 <-->|History Comparison| DS2[("D2: Login History DB")]
     P1_3 -->|Score + Level| P1_4{"1.4<br/>Risk<br/>Decision"}
 
     P1_4 -->|Low/Medium| P1_5["1.5<br/>Grant Access &<br/>Create Session"]
     P1_4 -->|High| P1_6["1.6<br/>Block Login"]
 
     P1_1 -->|Invalid Credentials| P1_7["1.7<br/>Track Failed<br/>Attempt"]
-    P1_7 <-->|Read/Write| DS3[("D3: Failed Attempts")]
+    P1_7 <-->|Read/Write| DS3[("D3: Failed Attempts DB")]
     P1_7 -->|Count >= 3| P1_8["1.8<br/>Trigger<br/>Alert Email"]
     P1_8 -->|Send Alert| EJS(("📧 EmailJS"))
 
@@ -251,29 +261,28 @@ graph TB
 
 ```
 fake_login/
+├── backend/                    # Node.js + Express Backend
+│   ├── prisma/                 # Database Schema
+│   ├── src/                    # API Routes and Controllers
+│   ├── package.json
+│   └── Dockerfile              # Backend Container definition
 ├── public/                     # Static assets
-├── src/
+├── src/                        # React Frontend App
 │   ├── App.tsx                 # Main app - routing & login handler
 │   ├── index.tsx               # React entry point
-│   ├── components/
-│   │   ├── login-page.tsx      # Login form + OTP forgot password
-│   │   ├── signup-page.tsx     # Registration with password validation
-│   │   ├── dashboard.tsx       # Security dashboard & analytics
-│   │   ├── security-info.tsx   # Device & location display card
-│   │   └── ui/                 # Shadcn UI primitives (30+ components)
+│   ├── components/             # React components
 │   ├── context/
-│   │   └── AuthContext.tsx     # Auth state, login/signup logic,
-│   │                           # failed attempts tracking, risk integration
+│   │   └── AuthContext.tsx     # Auth state, login/signup API hooks
 │   ├── hooks/
 │   │   └── useLocationData.ts  # IP & geolocation hook (ipapi.co)
 │   ├── utils/
 │   │   ├── email-service.ts    # EmailJS: OTP sender + suspicious alert
 │   │   └── risk-engine.ts      # ML risk scoring algorithm
 │   └── styles/                 # Tailwind, theme, fonts
-├── .env                        # EmailJS credentials
-├── package.json
-├── craco.config.js             # CRA build overrides
-└── tsconfig.json
+├── docker-compose.yml          # Docker composition config
+├── Dockerfile                  # Frontend Container (Nginx)
+├── .env                        # Environment variables
+└── package.json
 ```
 
 ---
@@ -282,12 +291,13 @@ fake_login/
 
 | Layer | Technology |
 |-------|-----------|
-| **Framework** | React 18 + TypeScript |
-| **Styling** | Tailwind CSS v4, Shadcn UI (Radix Primitives) |
-| **Build Tool** | Create React App + Craco |
+| **Frontend** | React 18, TypeScript, Tailwind CSS v4, Shadcn UI |
+| **Backend** | Node.js, Express, TypeScript |
+| **Database** | PostgreSQL, Prisma ORM |
+| **Infrastructure** | Docker, Docker Compose, Nginx |
 | **Email Service** | EmailJS (OTP template + Alert template) |
 | **Geolocation** | ipapi.co REST API |
-| **State** | React Context + localStorage |
+| **State** | React Context |
 | **Animations** | Motion (Framer Motion) |
 | **Charts** | Recharts |
 
@@ -297,8 +307,7 @@ fake_login/
 
 ### Prerequisites
 
-- **Node.js** v18+
-- **npm**
+- **Docker** and **Docker Compose** installed on your system.
 
 ### Environment Setup
 
@@ -310,28 +319,50 @@ REACT_APP_EMAILJS_TEMPLATE_ID=your_otp_template_id
 REACT_APP_EMAILJS_PUBLIC_KEY=your_public_key
 ```
 
-> **Note:** The suspicious login alert uses a separate template ID configured in `email-service.ts`.
+### Running the Application
 
-### Installation & Running
+This project is fully dockerized. To start the application (Frontend + Backend + PostgreSQL), simply run:
 
 ```bash
 # Clone the repository
 git clone https://github.com/miran786/Fake-Login-Detection.git
 cd fake_login
 
-# Install dependencies
-npm install
-
-# Start development server
-npm start
+# Build and start the containers in detached mode
+docker-compose up --build -d
 ```
 
-The app will open at **http://localhost:3000**.
+- **Frontend** will be available at **http://localhost**
+- **Backend API** will be available at **http://localhost:5000**
+- **Database** will be exposed on **localhost:5432**
 
-### Production Build
+### Stopping the Application
 
 ```bash
+docker-compose down
+```
+
+### Manual Development Setup (Without Docker)
+
+If you prefer to run the services manually:
+
+**1. Database**
+Ensure you have PostgreSQL running and update `DATABASE_URL` in `backend/.env`.
+
+**2. Backend**
+```bash
+cd backend
+npm install
+npx prisma db push
 npm run build
+npm run start:prod
+```
+
+**3. Frontend**
+```bash
+# From the root directory
+npm install
+npm start
 ```
 
 ---
@@ -364,10 +395,10 @@ An HTML email with IP address, device, location, and timestamp is sent to the ac
 
 ## 📝 How It Works
 
-1. **No Real Backend** — User data lives in browser `localStorage`, making it fully client-side.
+1. **Full-Stack Architecture** — The application now uses an Express + Prisma backend with a PostgreSQL database, providing a robust scalable foundation architecture replacing the earlier client-only local storage system.
 2. **Real Emails** — Uses EmailJS SDK for actual email delivery (OTPs and security alerts).
 3. **Live Geolocation** — Fetches real IP and location data from `ipapi.co`.
-4. **Privacy First** — No data is sent to any custom server; everything stays in your browser.
+4. **Automated Deployment** — Docker Compose seamlessly links the Postgres DB, the Node backend, and the React frontend.
 5. **Demo Friendly** — Create any account you want to test the full flow.
 
 ---

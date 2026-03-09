@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { LoginPage } from './components/login-page';
 import { SignupPage } from './components/signup-page';
 import { Dashboard } from './components/dashboard';
+import { AdminPanel } from './components/admin-panel';
 import { Toaster } from './components/ui/sonner';
 import { useAuth } from './context/AuthContext';
 import { toast } from 'sonner';
@@ -11,12 +12,13 @@ type View = 'login' | 'signup' | 'dashboard';
 export default function App() {
   const { user, login, signup, logout } = useAuth();
   const [currentView, setCurrentView] = useState<View>('login');
+  const isAdminRoute = window.location.pathname.startsWith('/admin');
 
   useEffect(() => {
-    if (user) {
+    if (user && !isAdminRoute) {
       setCurrentView('dashboard');
     }
-  }, [user]);
+  }, [user, isAdminRoute]);
 
   const handleLogin = async (email: string, password: string) => {
     // ML risk assessment is now handled in AuthContext
@@ -71,6 +73,15 @@ export default function App() {
       description: 'You have been securely logged out',
     });
   };
+
+  if (isAdminRoute) {
+    return (
+      <>
+        <AdminPanel />
+        <Toaster />
+      </>
+    );
+  }
 
   return (
     <>
